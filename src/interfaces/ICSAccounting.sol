@@ -324,14 +324,22 @@ interface ICSAccounting is
     ///      Method call can result in the remaining bond being lower than the locked bond.
     /// @param nodeOperatorId ID of the Node Operator
     /// @param amount Amount to penalize in ETH (stETH)
-    function penalize(uint256 nodeOperatorId, uint256 amount) external;
+    /// @return fullyBurned True if the bond was fully burned, false otherwise
+    function penalize(
+        uint256 nodeOperatorId,
+        uint256 amount
+    ) external returns (bool fullyBurned);
 
     /// @notice Charge fee from bond by transferring stETH shares of the given Node Operator to the charge recipient
     /// @dev Charge confiscation has a priority over the locked bond.
     ///      Method call can result in the remaining bond being lower than the locked bond.
     /// @param nodeOperatorId ID of the Node Operator
     /// @param amount Amount to charge in ETH (stETH)
-    function chargeFee(uint256 nodeOperatorId, uint256 amount) external;
+    /// @return fullyCharged True if the bond was fully charged, false otherwise
+    function chargeFee(
+        uint256 nodeOperatorId,
+        uint256 amount
+    ) external returns (bool fullyCharged);
 
     /// @notice Pull fees from CSFeeDistributor to the Node Operator's bond
     /// @dev Permissionless method. Can be called before penalty application to ensure that rewards are also penalized
