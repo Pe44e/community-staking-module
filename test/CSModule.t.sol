@@ -230,7 +230,8 @@ abstract contract CSMFixtures is Test, Fixtures, Utilities, InvariantAsserts {
         withdrawalsInfo[0] = ValidatorWithdrawalInfo(
             noId,
             0,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
         csm.submitWithdrawals(withdrawalsInfo);
     }
@@ -3302,7 +3303,8 @@ contract CsmQueueOps is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             0,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectEmit(address(csm));
@@ -4473,7 +4475,8 @@ contract CsmGetNodeOperatorNonWithdrawnKeys is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             0,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         csm.submitWithdrawals(withdrawalInfo);
@@ -6072,14 +6075,16 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectEmit(address(csm));
         emit ICSModule.WithdrawalSubmitted(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE(),
+            csm.MIN_ACTIVATION_BALANCE(),
+            0,
             pubkey
         );
         csm.submitWithdrawals(withdrawalInfo);
@@ -6105,14 +6110,16 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE() - BOND_SIZE - 1 ether
+            csm.MIN_ACTIVATION_BALANCE() - BOND_SIZE - 1 ether,
+            0
         );
 
         vm.expectEmit(address(csm));
         emit ICSModule.WithdrawalSubmitted(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE() - BOND_SIZE - 1 ether,
+            csm.MIN_ACTIVATION_BALANCE() - BOND_SIZE - 1 ether,
+            0,
             pubkey
         );
         csm.submitWithdrawals(withdrawalInfo);
@@ -6134,7 +6141,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE() - 1 ether
+            csm.MIN_ACTIVATION_BALANCE() - 1 ether,
+            0
         );
 
         vm.expectCall(
@@ -6163,7 +6171,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectCall(
@@ -6192,7 +6201,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectCall(
@@ -6221,7 +6231,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE() - 1 ether
+            csm.MIN_ACTIVATION_BALANCE() - 1 ether,
+            0
         );
 
         vm.expectCall(
@@ -6253,7 +6264,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectCall(
@@ -6293,7 +6305,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectCall(
@@ -6333,7 +6346,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectCall(
@@ -6373,7 +6387,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         vm.expectCall(
@@ -6409,7 +6424,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         expectNoCall(
@@ -6445,7 +6461,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             keyIndex,
-            csm.DEPOSIT_SIZE() - 1 ether
+            csm.MIN_ACTIVATION_BALANCE() - 1 ether,
+            0
         );
 
         expectNoCall(
@@ -6467,7 +6484,7 @@ contract CsmSubmitWithdrawals is CSMCommon {
 
         ValidatorWithdrawalInfo[]
             memory withdrawalInfo = new ValidatorWithdrawalInfo[](1);
-        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, keyIndex, 1 ether);
+        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, keyIndex, 1 ether, 0);
 
         csm.submitWithdrawals(withdrawalInfo);
         assertEq(csm.getNonce(), nonce + 1);
@@ -6479,7 +6496,7 @@ contract CsmSubmitWithdrawals is CSMCommon {
     {
         ValidatorWithdrawalInfo[]
             memory withdrawalInfo = new ValidatorWithdrawalInfo[](1);
-        withdrawalInfo[0] = ValidatorWithdrawalInfo(0, 0, 0);
+        withdrawalInfo[0] = ValidatorWithdrawalInfo(0, 0, 32 ether, 0);
 
         vm.expectRevert(ICSModule.NodeOperatorDoesNotExist.selector);
         csm.submitWithdrawals(withdrawalInfo);
@@ -6493,7 +6510,7 @@ contract CsmSubmitWithdrawals is CSMCommon {
 
         ValidatorWithdrawalInfo[]
             memory withdrawalInfo = new ValidatorWithdrawalInfo[](1);
-        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, 0, 0);
+        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, 0, 32 ether, 0);
 
         vm.expectRevert(ICSModule.SigningKeysInvalidOffset.selector);
         csm.submitWithdrawals(withdrawalInfo);
@@ -6508,7 +6525,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             0,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
 
         csm.submitWithdrawals(withdrawalInfo);
@@ -6536,7 +6554,8 @@ contract CsmSubmitWithdrawals is CSMCommon {
             withdrawalInfo[i] = ValidatorWithdrawalInfo(
                 noId,
                 i,
-                csm.DEPOSIT_SIZE()
+                csm.MIN_ACTIVATION_BALANCE(),
+                0
             );
         }
         csm.submitWithdrawals(withdrawalInfo);
@@ -6744,7 +6763,7 @@ contract CSMAccessControl is CSMCommonNoRoles {
 
         ValidatorWithdrawalInfo[]
             memory withdrawalInfo = new ValidatorWithdrawalInfo[](1);
-        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, 0, 1 ether);
+        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, 0, 1 ether, 0);
 
         vm.prank(actor);
         csm.submitWithdrawals(withdrawalInfo);
@@ -6756,7 +6775,7 @@ contract CSMAccessControl is CSMCommonNoRoles {
 
         ValidatorWithdrawalInfo[]
             memory withdrawalInfo = new ValidatorWithdrawalInfo[](1);
-        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, 0, 1 ether);
+        withdrawalInfo[0] = ValidatorWithdrawalInfo(noId, 0, 1 ether, 0);
 
         vm.prank(stranger);
         expectRoleRevert(stranger, role);
@@ -7008,17 +7027,20 @@ contract CSMDepositableValidatorsCount is CSMCommon {
         withdrawalInfo[0] = ValidatorWithdrawalInfo(
             noId,
             0,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
         withdrawalInfo[1] = ValidatorWithdrawalInfo(
             noId,
             1,
-            csm.DEPOSIT_SIZE()
+            csm.MIN_ACTIVATION_BALANCE(),
+            0
         );
         withdrawalInfo[2] = ValidatorWithdrawalInfo(
             noId,
             2,
-            csm.DEPOSIT_SIZE() - BOND_SIZE
+            csm.MIN_ACTIVATION_BALANCE() - BOND_SIZE,
+            0
         ); // Large CL balance drop, that doesn't change the unbonded count.
 
         assertEq(csm.getNodeOperator(noId).depositableValidatorsCount, 0);

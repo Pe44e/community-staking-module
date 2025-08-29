@@ -47,7 +47,8 @@ contract CSModule is
     bytes32 public constant CREATE_NODE_OPERATOR_ROLE =
         keccak256("CREATE_NODE_OPERATOR_ROLE");
 
-    uint256 public constant DEPOSIT_SIZE = 32 ether;
+    uint256 public constant MIN_ACTIVATION_BALANCE = 32 ether;
+    uint256 public constant PENALTY_QUOTIENT = 32 ether;
     // @dev see IStakingModule.sol
     uint8 private constant FORCED_TARGET_LIMIT_MODE_ID = 2;
     // keccak256(abi.encode(uint256(keccak256("OPERATORS_CREATED_IN_TX_MAP_TSLOT")) - 1)) & ~bytes32(uint256(0xff))
@@ -733,6 +734,12 @@ contract CSModule is
         for (uint256 i; i < withdrawalsInfo.length; ++i) {
             ValidatorWithdrawalInfo memory withdrawalInfo = withdrawalsInfo[i];
 
+            // For slashed validator this value should reflect pre-slashing, hence non-zero balance. For non-slashed
+            // validator it will reflect the withdrawal amount, hence it cannot be zero either.
+            if (withdrawalInfo.exitBalance == 0) {
+                revert ZeroExitBalance();
+            }
+
             _onlyExistingNodeOperator(withdrawalInfo.nodeOperatorId);
             NodeOperator storage no = _nodeOperators[
                 withdrawalInfo.nodeOperatorId
@@ -750,6 +757,8 @@ contract CSModule is
                 continue;
             }
 
+            anySubmission = true;
+
             _isValidatorWithdrawn[pointer] = true;
             unchecked {
                 ++no.totalWithdrawnKeys;
@@ -761,30 +770,39 @@ contract CSModule is
                 1
             );
 
+            // solhint-disable-next-line func-named-parameters
             emit WithdrawalSubmitted(
                 withdrawalInfo.nodeOperatorId,
                 withdrawalInfo.keyIndex,
-                withdrawalInfo.amount,
+                withdrawalInfo.exitBalance,
+                withdrawalInfo.slashingPenalty,
                 pubkey
             );
-            anySubmission = true;
 
-            // It is safe to use unchecked for penalty sum because it's limited to uint248 in the structure.
             uint256 penaltySum;
+            // XXX: Limit to 64 to because of MAX_EFFECTIVE_BALANCE? Then it will be also safe to return unchecked blocks.
+            // penaltyMultiplier is >= 1
+            uint256 penaltyMultiplier = Math.max(
+                withdrawalInfo.exitBalance,
+                MIN_ACTIVATION_BALANCE
+            ) / PENALTY_QUOTIENT;
+
             bool chargeWithdrawalRequestFee;
 
+            // Once the `penaltyMultiplier` exceeds 85, i.e. `exitBalance` >= 2752 ETH, it's unsafe to use unchecked
+            // blocks for penalty sum calculation, since type(uint248).max times 86 times 3 doesn't fit into uint256.
             ExitPenaltyInfo memory exitPenaltyInfo = EXIT_PENALTIES
                 .getExitPenaltyInfo(withdrawalInfo.nodeOperatorId, pubkey);
             if (exitPenaltyInfo.delayPenalty.isValue) {
-                unchecked {
-                    penaltySum += exitPenaltyInfo.delayPenalty.value;
-                }
+                penaltySum +=
+                    exitPenaltyInfo.delayPenalty.value *
+                    penaltyMultiplier;
                 chargeWithdrawalRequestFee = true;
             }
             if (exitPenaltyInfo.strikesPenalty.isValue) {
-                unchecked {
-                    penaltySum += exitPenaltyInfo.strikesPenalty.value;
-                }
+                penaltySum +=
+                    exitPenaltyInfo.strikesPenalty.value *
+                    penaltyMultiplier;
                 chargeWithdrawalRequestFee = true;
             }
 
@@ -800,15 +818,20 @@ contract CSModule is
             ) {
                 _accounting.chargeFee(
                     withdrawalInfo.nodeOperatorId,
-                    exitPenaltyInfo.withdrawalRequestFee.value
+                    exitPenaltyInfo.withdrawalRequestFee.value *
+                        penaltyMultiplier
                 );
             }
 
-            if (DEPOSIT_SIZE > withdrawalInfo.amount) {
-                unchecked {
-                    penaltySum += DEPOSIT_SIZE - withdrawalInfo.amount;
-                }
+            if (withdrawalInfo.slashingPenalty > 0) {
+                // Slashing penalty doesn't scale because all the losses are already accounted.
+                penaltySum += withdrawalInfo.slashingPenalty;
+            } else if (withdrawalInfo.exitBalance < MIN_ACTIVATION_BALANCE) {
+                penaltySum +=
+                    MIN_ACTIVATION_BALANCE -
+                    withdrawalInfo.exitBalance;
             }
+
             if (penaltySum > 0) {
                 _accounting.penalize(withdrawalInfo.nodeOperatorId, penaltySum);
             }

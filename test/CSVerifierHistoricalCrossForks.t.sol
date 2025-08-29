@@ -6,7 +6,7 @@ import "forge-std/Test.sol";
 import { stdJson } from "forge-std/StdJson.sol";
 
 import { ICSVerifier } from "../src/interfaces/ICSVerifier.sol";
-import { ICSModule } from "../src/interfaces/ICSModule.sol";
+import { ICSModule, ValidatorWithdrawalInfo } from "../src/interfaces/ICSModule.sol";
 
 import { GIndex } from "../src/lib/GIndex.sol";
 
@@ -97,7 +97,11 @@ contract CSVerifierBiForkHistoricalTest is
                 gIFirstHistoricalSummaryPrev: pack(0x76000000, 24),
                 gIFirstHistoricalSummaryCurr: pack(0xb6000000, 24),
                 gIFirstBlockRootInSummaryPrev: pack(0x4000, 13),
-                gIFirstBlockRootInSummaryCurr: pack(0x4000, 13)
+                gIFirstBlockRootInSummaryCurr: pack(0x4000, 13),
+                gIFirstBalancesNodePrev: pack(0x260000000000, 40),
+                gIFirstBalancesNodeCurr: pack(0x260000000000, 40),
+                gIFirstPendingConsolidationPrev: pack(0x3200000, 18),
+                gIFirstPendingConsolidationCurr: pack(0x3200000, 18)
             }),
             firstSupportedSlot: fixture.oldBlock.header.slot,
             pivotSlot: fixture.beaconBlock.header.slot.dec(),
@@ -107,7 +111,24 @@ contract CSVerifierBiForkHistoricalTest is
         _setMocksWithdrawal(fixture);
     }
 
-    function test_processWithdrawalProof() public {
+    function test_processWithdrawalProof_HappyPath() public {
+        ValidatorWithdrawalInfo[]
+            memory withdrawals = new ValidatorWithdrawalInfo[](1);
+        withdrawals[0] = ValidatorWithdrawalInfo({
+            nodeOperatorId: 0,
+            keyIndex: 0,
+            exitBalance: uint256(fixture.witness.amount) * 1e9,
+            slashingPenalty: 0
+        });
+
+        vm.expectCall(
+            address(module),
+            abi.encodeWithSelector(
+                ICSModule.submitWithdrawals.selector,
+                withdrawals
+            )
+        );
+
         // solhint-disable-next-line func-named-parameters
         verifier.processHistoricalWithdrawalProof(
             fixture.beaconBlock,
@@ -203,7 +224,11 @@ contract CSVerifierBiForkHistoricalAtPivotSlotTest is
                 gIFirstHistoricalSummaryPrev: pack(0x76000000, 24),
                 gIFirstHistoricalSummaryCurr: pack(0xb6000000, 24),
                 gIFirstBlockRootInSummaryPrev: pack(0x4000, 13),
-                gIFirstBlockRootInSummaryCurr: pack(0x4000, 13)
+                gIFirstBlockRootInSummaryCurr: pack(0x4000, 13),
+                gIFirstBalancesNodePrev: pack(0x260000000000, 40),
+                gIFirstBalancesNodeCurr: pack(0x260000000000, 40),
+                gIFirstPendingConsolidationPrev: pack(0x3200000, 18),
+                gIFirstPendingConsolidationCurr: pack(0x3200000, 18)
             }),
             firstSupportedSlot: fixture.oldBlock.header.slot,
             pivotSlot: fixture.beaconBlock.header.slot,

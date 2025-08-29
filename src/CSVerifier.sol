@@ -5,7 +5,7 @@ pragma solidity 0.8.24;
 
 import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 
-import { BeaconBlockHeader, Slot, Validator, Withdrawal } from "./lib/Types.sol";
+import { BeaconBlockHeader, Slot, Validator, Withdrawal, PendingConsolidation } from "./lib/Types.sol";
 import { PausableUntil } from "./lib/utils/PausableUntil.sol";
 import { GIndex } from "./lib/GIndex.sol";
 import { SSZ } from "./lib/SSZ.sol";
@@ -28,6 +28,7 @@ function gweiToWei(uint64 amount) pure returns (uint256) {
 contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
     using { amountWei } for Withdrawal;
 
+    using SSZ for PendingConsolidation;
     using SSZ for BeaconBlockHeader;
     using SSZ for Withdrawal;
     using SSZ for Validator;
@@ -69,6 +70,18 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
     /// @dev This index is relative to HistoricalSummary like: HistoricalSummary.blockRoots[0].
     GIndex public immutable GI_FIRST_BLOCK_ROOT_IN_SUMMARY_CURR;
 
+    /// @dev This index is relative to a state like: `BeaconState.balances[0]`.
+    GIndex public immutable GI_FIRST_BALANCES_NODE_PREV;
+
+    /// @dev This index is relative to a state like: `BeaconState.balances[0]`.
+    GIndex public immutable GI_FIRST_BALANCES_NODE_CURR;
+
+    /// @dev This index is relative to a state like: `BeaconState.pending_consolidations[0]`.
+    GIndex public immutable GI_FIRST_PENDING_CONSOLIDATION_PREV;
+
+    /// @dev This index is relative to a state like: `BeaconState.pending_consolidations[0]`.
+    GIndex public immutable GI_FIRST_PENDING_CONSOLIDATION_CURR;
+
     /// @dev The very first slot the verifier is supposed to accept proofs for.
     Slot public immutable FIRST_SUPPORTED_SLOT;
 
@@ -83,6 +96,9 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
 
     /// @dev Staking module contract.
     ICSModule public immutable MODULE;
+
+    /// @dev Placeholder for slahing penalty value in ValidatorWithdrawalInfo.
+    uint256 internal constant NO_SLASHING_PENALTY = 0;
 
     /// @dev The previous and current forks can be essentially the same.
     constructor(
@@ -146,6 +162,14 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         GI_FIRST_BLOCK_ROOT_IN_SUMMARY_CURR = gindices
             .gIFirstBlockRootInSummaryCurr;
 
+        GI_FIRST_BALANCES_NODE_PREV = gindices.gIFirstBalancesNodePrev;
+        GI_FIRST_BALANCES_NODE_CURR = gindices.gIFirstBalancesNodeCurr;
+
+        GI_FIRST_PENDING_CONSOLIDATION_PREV = gindices
+            .gIFirstPendingConsolidationPrev;
+        GI_FIRST_PENDING_CONSOLIDATION_CURR = gindices
+            .gIFirstPendingConsolidationCurr;
+
         FIRST_SUPPORTED_SLOT = firstSupportedSlot;
         PIVOT_SLOT = pivotSlot;
         CAPELLA_SLOT = capellaSlot;
@@ -164,6 +188,7 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
     }
 
     /// @inheritdoc ICSVerifier
+    // TODO: Check gas usage in conjunction with submitWithdrawals method.
     function processWithdrawalProof(
         ProvableBeaconBlockHeader calldata beaconBlock,
         WithdrawalWitness calldata witness,
@@ -201,7 +226,8 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         withdrawalsInfo[0] = ValidatorWithdrawalInfo(
             nodeOperatorId,
             keyIndex,
-            withdrawalAmount
+            withdrawalAmount,
+            NO_SLASHING_PENALTY
         );
         MODULE.submitWithdrawals(withdrawalsInfo);
     }
@@ -214,6 +240,10 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         uint256 nodeOperatorId,
         uint256 keyIndex
     ) external whenResumed {
+        if (witness.slashed) {
+            revert ValidatorIsSlashed();
+        }
+
         if (beaconBlock.header.slot < FIRST_SUPPORTED_SLOT) {
             revert UnsupportedSlot(beaconBlock.header.slot);
         }
@@ -260,7 +290,122 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         withdrawalsInfo[0] = ValidatorWithdrawalInfo(
             nodeOperatorId,
             keyIndex,
-            withdrawalAmount
+            withdrawalAmount,
+            NO_SLASHING_PENALTY
+        );
+        MODULE.submitWithdrawals(withdrawalsInfo);
+    }
+
+    /// @inheritdoc ICSVerifier
+    function processConsolidation(
+        ProcessConsolidationInput calldata data
+    ) external {
+        if (data.recentBlock.header.slot < FIRST_SUPPORTED_SLOT) {
+            revert UnsupportedSlot(data.recentBlock.header.slot);
+        }
+
+        if (data.withdrawableBlock.header.slot < FIRST_SUPPORTED_SLOT) {
+            revert UnsupportedSlot(data.withdrawableBlock.header.slot);
+        }
+
+        if (data.consolidationBlock.header.slot < FIRST_SUPPORTED_SLOT) {
+            revert UnsupportedSlot(data.consolidationBlock.header.slot);
+        }
+
+        {
+            bytes memory pubkey = MODULE.getSigningKeys(
+                data.validator.nodeOperatorId,
+                data.validator.keyIndex,
+                1
+            );
+
+            if (keccak256(pubkey) != keccak256(data.validator.object.pubkey)) {
+                revert InvalidPublicKey();
+            }
+        }
+
+        if (
+            _computeEpochAtSlot(data.withdrawableBlock.header.slot) <
+            data.validator.object.withdrawableEpoch
+        ) {
+            revert ValidatorNotWithdrawable();
+        }
+
+        if (data.consolidation.object.sourceIndex != data.validator.index) {
+            revert InvalidConsolidationSource();
+        }
+
+        // Verify recent block's header.
+        {
+            bytes32 trustedHeaderRoot = _getParentBlockRoot(
+                data.recentBlock.rootsTimestamp
+            );
+            bytes32 headerRoot = data.recentBlock.header.hashTreeRoot();
+            if (trustedHeaderRoot != headerRoot) {
+                revert InvalidBlockHeader();
+            }
+        }
+
+        // Verify consolidation block header.
+        SSZ.verifyProof({
+            proof: data.consolidationBlock.proof,
+            root: data.recentBlock.header.stateRoot,
+            leaf: data.consolidationBlock.header.hashTreeRoot(),
+            gI: _getHistoricalBlockRootGI(
+                data.recentBlock.header.slot,
+                data.consolidationBlock.header.slot
+            )
+        });
+
+        // Verify PendingConsolidation object against the consolidation block.
+        SSZ.verifyProof({
+            proof: data.consolidation.proof,
+            root: data.consolidationBlock.header.stateRoot,
+            leaf: data.consolidation.object.hashTreeRoot(),
+            gI: _getPendingConsolidationGI(
+                data.consolidation.offset,
+                data.consolidationBlock.header.slot
+            )
+        });
+
+        // Verify "withdrawable" block header.
+        SSZ.verifyProof({
+            proof: data.withdrawableBlock.proof,
+            root: data.recentBlock.header.stateRoot,
+            leaf: data.withdrawableBlock.header.hashTreeRoot(),
+            gI: _getHistoricalBlockRootGI(
+                data.recentBlock.header.slot,
+                data.withdrawableBlock.header.slot
+            )
+        });
+
+        // Verify Validator object against the "withdrawable" block.
+        SSZ.verifyProof({
+            proof: data.validator.proof,
+            root: data.withdrawableBlock.header.stateRoot,
+            leaf: data.validator.object.hashTreeRoot(),
+            gI: _getValidatorGI(
+                data.validator.index,
+                data.withdrawableBlock.header.slot
+            )
+        });
+
+        // Verify validator's balance against the consolidation block.
+        uint256 balance = _verifyValidatorBalance({
+            validatorIndex: data.validator.index,
+            balanceNode: data.balance.node,
+            stateRoot: data.consolidationBlock.header.stateRoot,
+            stateSlot: data.consolidationBlock.header.slot,
+            proof: data.balance.proof
+        });
+
+        ValidatorWithdrawalInfo[]
+            memory withdrawalsInfo = new ValidatorWithdrawalInfo[](1);
+        withdrawalsInfo[0] = ValidatorWithdrawalInfo(
+            data.validator.nodeOperatorId,
+            data.validator.keyIndex,
+            balance,
+            NO_SLASHING_PENALTY
         );
         MODULE.submitWithdrawals(withdrawalsInfo);
     }
@@ -286,6 +431,10 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         bytes32 stateRoot,
         bytes memory pubkey
     ) internal view returns (uint256 withdrawalAmount) {
+        if (witness.slashed) {
+            revert ValidatorIsSlashed();
+        }
+
         // WC to address
         address withdrawalAddress = address(
             uint160(uint256(witness.withdrawalCredentials))
@@ -295,7 +444,7 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         }
 
         if (_computeEpochAtSlot(stateSlot) < witness.withdrawableEpoch) {
-            revert ValidatorNotWithdrawn();
+            revert ValidatorNotWithdrawable();
         }
 
         // See https://hackmd.io/1wM8vqeNTjqt4pC3XoCUKQ
@@ -305,22 +454,22 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         // - wait for full withdrawal & sweep
         // - be lucky enough that no one provides proof for this withdrawal for at least 1 sweep cycle
         //  (~8 days with the network of 1M active validators)
-        // - deposit 1 ETH for slashed or 8 ETH for non-slashed validator
+        // - deposit 15 ETH for non-slashed validator
         // - wait for a sweep of this deposit
         // - provide proof of the last withdrawal
         // As a result, the Node Operator's bond will be penalized for 32 ETH - additional deposit value
         // However, all ETH involved,
-        // including 1 or 8 ETH deposited by the attacker will remain in the Lido on Ethereum protocol
+        // including 15 ETH deposited by the attacker will remain in the Lido on Ethereum protocol
         // Hence, the only consequence of the attack is an inconsistency in the bond accounting that can be resolved
         // through the bond deposit approved by the corresponding DAO decision
         //
         // Resolution:
         // Given no losses for the protocol,
-        // significant cost of attack (1 or 8 ETH),
+        // significant cost of attack (15 ETH),
         // and lack of feasible ways to mitigate it in the smart contract's code,
         // it is proposed to acknowledge possibility of the attack
         // and be ready to propose a corresponding vote to the DAO if it will ever happen
-        if (!witness.slashed && gweiToWei(witness.amount) < 8 ether) {
+        if (gweiToWei(witness.amount) < 15 ether) {
             revert PartialWithdrawal();
         }
 
@@ -328,7 +477,7 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
             pubkey: pubkey,
             withdrawalCredentials: witness.withdrawalCredentials,
             effectiveBalance: witness.effectiveBalance,
-            slashed: witness.slashed,
+            slashed: false,
             activationEligibilityEpoch: witness.activationEligibilityEpoch,
             activationEpoch: witness.activationEpoch,
             exitEpoch: witness.exitEpoch,
@@ -359,6 +508,37 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         return withdrawal.amountWei();
     }
 
+    function _verifyValidatorBalance(
+        uint256 validatorIndex,
+        bytes32 balanceNode,
+        bytes32 stateRoot,
+        Slot stateSlot,
+        bytes32[] calldata proof
+    ) internal view returns (uint256 balance) {
+        (
+            uint256 balancesOffset,
+            uint256 nodeOffset
+        ) = _getValidatorBalanceNodeInfo(validatorIndex);
+
+        SSZ.verifyProof({
+            proof: proof,
+            root: stateRoot,
+            leaf: balanceNode,
+            gI: _getValidatorBalanceGI(balancesOffset, stateSlot)
+        });
+
+        // `balanceNode` is a bytes32 value of 4 uint64s in little endian order. The code below extracts the value with
+        // the balance of the validator with index `validatorIndex` and converts it to big endian bytes order.
+
+        // prettier-ignore
+        assembly ("memory-safe") {
+            balanceNode := shl(mul(64, nodeOffset), balanceNode)
+            balanceNode := and(balanceNode, 0xFFFFFFFFFFFFFFFF000000000000000000000000000000000000000000000000)
+        }
+
+        balance = uint256(SSZ.endianReverse(balanceNode));
+    }
+
     function _getValidatorGI(
         uint256 offset,
         Slot stateSlot
@@ -376,6 +556,35 @@ contract CSVerifier is ICSVerifier, AccessControlEnumerable, PausableUntil {
         GIndex gI = stateSlot < PIVOT_SLOT
             ? GI_FIRST_WITHDRAWAL_PREV
             : GI_FIRST_WITHDRAWAL_CURR;
+        return gI.shr(offset);
+    }
+
+    function _getValidatorBalanceGI(
+        uint256 offset,
+        Slot stateSlot
+    ) internal view returns (GIndex) {
+        GIndex gI = stateSlot < PIVOT_SLOT
+            ? GI_FIRST_BALANCES_NODE_PREV
+            : GI_FIRST_BALANCES_NODE_CURR;
+        return gI.shr(offset);
+    }
+
+    function _getValidatorBalanceNodeInfo(
+        uint256 validatorIndex
+    ) internal pure returns (uint256 balancesOffset, uint256 nodeOffset) {
+        // `BeaconState.balances` is a list of uint64 values, SSZ packs 4 values into a single 32-byte node. Hence,
+        // balances[0-3] will share same generalized index.
+        balancesOffset = validatorIndex / 4;
+        nodeOffset = validatorIndex % 4;
+    }
+
+    function _getPendingConsolidationGI(
+        uint256 offset,
+        Slot stateSlot
+    ) internal view returns (GIndex) {
+        GIndex gI = stateSlot < PIVOT_SLOT
+            ? GI_FIRST_PENDING_CONSOLIDATION_PREV
+            : GI_FIRST_PENDING_CONSOLIDATION_CURR;
         return gI.shr(offset);
     }
 

@@ -3,7 +3,7 @@
 
 pragma solidity 0.8.24;
 
-import { BeaconBlockHeader, Slot } from "../lib/Types.sol";
+import { BeaconBlockHeader, PendingConsolidation, Slot, Validator } from "../lib/Types.sol";
 import { GIndex } from "../lib/GIndex.sol";
 import { ICSModule } from "./ICSModule.sol";
 
@@ -17,9 +17,19 @@ interface ICSVerifier {
         GIndex gIFirstHistoricalSummaryCurr;
         GIndex gIFirstBlockRootInSummaryPrev;
         GIndex gIFirstBlockRootInSummaryCurr;
+        GIndex gIFirstBalancesNodePrev;
+        GIndex gIFirstBalancesNodeCurr;
+        GIndex gIFirstPendingConsolidationPrev;
+        GIndex gIFirstPendingConsolidationCurr;
     }
 
     struct ProvableBeaconBlockHeader {
+        BeaconBlockHeader header; // Header of a block which root is a root at rootsTimestamp.
+        uint64 rootsTimestamp; // To be passed to the EIP-4788 block roots contract.
+    }
+
+    // Want to rename from ProvableBeaconBlockHeader
+    struct RecentHeaderWitness {
         BeaconBlockHeader header; // Header of a block which root is a root at rootsTimestamp.
         uint64 rootsTimestamp; // To be passed to the EIP-4788 block roots contract.
     }
@@ -61,12 +71,43 @@ interface ICSVerifier {
         bytes32[] proof;
     }
 
+    struct ValidatorWitness {
+        uint64 index;
+        uint32 nodeOperatorId;
+        uint32 keyIndex;
+        Validator object;
+        bytes32[] proof;
+    }
+
+    struct BalanceWitness {
+        bytes32 node;
+        bytes32[] proof;
+    }
+
+    struct PendingConsolidationWitness {
+        PendingConsolidation object;
+        uint64 offset; // in the list of pending consolidations
+        bytes32[] proof;
+    }
+
+    struct ProcessConsolidationInput {
+        PendingConsolidationWitness consolidation;
+        ValidatorWitness validator;
+        BalanceWitness balance; // balance of the validator before consolidation processing
+        RecentHeaderWitness recentBlock;
+        HistoricalHeaderWitness withdrawableBlock;
+        HistoricalHeaderWitness consolidationBlock;
+    }
+
     error RootNotFound();
     error InvalidBlockHeader();
     error InvalidChainConfig();
     error PartialWithdrawal();
-    error ValidatorNotWithdrawn();
+    error ValidatorIsSlashed();
+    error ValidatorNotWithdrawable();
     error InvalidWithdrawalAddress();
+    error InvalidPublicKey();
+    error InvalidConsolidationSource();
     error UnsupportedSlot(Slot slot);
     error ZeroModuleAddress();
     error ZeroWithdrawalAddress();
@@ -125,6 +166,9 @@ interface ICSVerifier {
     function resume() external;
 
     /// @notice Verify withdrawal proof and report withdrawal to the module for valid proofs
+    /// @notice The method doesn't accept proofs for slashed validators. A dedicated committee is responsible for
+    /// determining the exact penalty amounts and calling the `ICSModule.submitWithdrawals` method via an EasyTrack
+    /// motion.
     /// @param beaconBlock Beacon block header
     /// @param witness Withdrawal witness against the `beaconBlock`'s state root.
     /// @param nodeOperatorId ID of the Node Operator
@@ -137,6 +181,9 @@ interface ICSVerifier {
     ) external;
 
     /// @notice Verify withdrawal proof against historical summaries data and report withdrawal to the module for valid proofs
+    /// @notice The method doesn't accept proofs for slashed validators. A dedicated committee is responsible for
+    /// determining the exact penalty amounts and calling the `ICSModule.submitWithdrawals` method via an EasyTrack
+    /// motion.
     /// @param beaconBlock Beacon block header
     /// @param oldBlock Historical block header witness
     /// @param witness Withdrawal witness
@@ -148,5 +195,14 @@ interface ICSVerifier {
         WithdrawalWitness calldata witness,
         uint256 nodeOperatorId,
         uint256 keyIndex
+    ) external;
+
+    /// @notice Process validator's consolidation from a module's validator. The balance before consolidation processed
+    /// is assumed as the withdrawal balance.
+    /// @dev The caveat is that a pending consolidation is processed later, making it impossible to account for losses
+    /// or rewards during the waiting period, as there's no indication of consolidation processing in the state.
+    /// @param data @see ProcessConsolidationInput struct
+    function processConsolidation(
+        ProcessConsolidationInput calldata data
     ) external;
 }

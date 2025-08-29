@@ -1,4 +1,6 @@
 set dotenv-load
+
+import? ".local.just"
 import "fork.just"
 
 chain := env_var_or_default("CHAIN", "mainnet")
