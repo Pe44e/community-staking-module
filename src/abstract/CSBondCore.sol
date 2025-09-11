@@ -280,7 +280,10 @@ abstract contract CSBondCore is ICSBondCore {
     }
 
     /// @dev Unsafe reduce bond shares (stETH) (possible underflow). Safety checks should be done outside
-    function _unsafeReduceBond(uint256 nodeOperatorId, uint256 shares) private {
+    function _unsafeReduceBond(
+        uint256 nodeOperatorId,
+        uint256 shares
+    ) internal {
         CSBondCoreStorage storage $ = _getCSBondCoreStorage();
         $.bondShares[nodeOperatorId] -= shares;
         $.totalBondShares -= shares;

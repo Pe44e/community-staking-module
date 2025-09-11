@@ -60,19 +60,20 @@ library FeeSplits {
         mapping(uint256 => ICSAccounting.FeeSplit[]) storage feeSplitsStorage,
         ILido lido,
         uint256 nodeOperatorId,
-        uint256 amount
-    ) external returns (uint256 reminder) {
-        reminder = amount;
+        uint256 stETHSharesAmount
+    ) external returns (uint256 stETHSharesReminder) {
+        stETHSharesReminder = stETHSharesAmount;
         ICSAccounting.FeeSplit[] memory feeSplits = feeSplitsStorage[
             nodeOperatorId
         ];
         if (feeSplits.length != 0) {
             for (uint256 i = 0; i < feeSplits.length; i++) {
                 ICSAccounting.FeeSplit memory feeSplit = feeSplits[i];
-                uint256 splitAmount = (amount * feeSplit.share) / MAX_BP;
-                if (splitAmount != 0) {
-                    lido.transferShares(feeSplit.recipient, splitAmount);
-                    reminder -= splitAmount;
+                uint256 splitSharesAmount = (stETHSharesAmount *
+                    feeSplit.share) / MAX_BP;
+                if (splitSharesAmount != 0) {
+                    lido.transferShares(feeSplit.recipient, splitSharesAmount);
+                    stETHSharesReminder -= splitSharesAmount;
                 }
             }
         }
