@@ -38,6 +38,7 @@ interface ICSAccounting is
     error SenderIsNotEligible();
     error BondReserveFeatureDisabled();
     error MinReserveTimeHasNotPassed();
+    error NodeOperatorIsNotEmpty();
     error ZeroModuleAddress();
     error ZeroAdminAddress();
     error ZeroFeeDistributorAddress();
@@ -95,6 +96,8 @@ interface ICSAccounting is
     ///                  Total shares must be <= 10_000 (100%). Remainder goes to the Node Operator's bond
     function setFeeSplits(
         uint256 nodeOperatorId,
+        uint256 cumulativeFeeShares,
+        bytes32[] calldata rewardsProof,
         FeeSplit[] calldata feeSplits
     ) external;
 

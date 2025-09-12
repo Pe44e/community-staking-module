@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 
 import { ICSAccounting } from "../interfaces/ICSAccounting.sol";
 import { ILido } from "../interfaces/ILido.sol";
+import { ICSFeeDistributor } from "../interfaces/ICSFeeDistributor.sol";
 
 /// Library for managing FeeSplits
 /// @dev the only use of this to be a library is to save CSAccounting contract size via delegatecalls
@@ -13,6 +14,7 @@ interface IFeeSplits {
         ICSAccounting.FeeSplit[] feeSplits
     );
 
+    error PendingOrUndistributedSharesExist();
     error TooManySplits();
     error TooManySplitShares();
     error ZeroSplitRecipient();
@@ -25,11 +27,26 @@ library FeeSplits {
 
     function setFeeSplits(
         mapping(uint256 => ICSAccounting.FeeSplit[]) storage feeSplitsStorage,
+        mapping(uint256 => uint256) storage pendingSharesToSplitStorage,
+        ICSFeeDistributor feeDistributor,
         uint256 nodeOperatorId,
+        uint256 cumulativeFeeShares,
+        bytes32[] calldata rewardsProof,
         ICSAccounting.FeeSplit[] calldata feeSplits
     ) external {
         if (feeSplits.length > MAX_FEE_SPLITS) {
             revert IFeeSplits.TooManySplits();
+        }
+        if (
+            pendingSharesToSplitStorage[nodeOperatorId] > 0 ||
+            feeDistributor.getFeesToDistribute(
+                nodeOperatorId,
+                cumulativeFeeShares,
+                rewardsProof
+            ) >
+            0
+        ) {
+            revert IFeeSplits.PendingOrUndistributedSharesExist();
         }
 
         uint256 totalShare = 0;
@@ -61,8 +78,7 @@ library FeeSplits {
         ILido lido,
         uint256 nodeOperatorId,
         uint256 stETHSharesAmount
-    ) external returns (uint256 stETHSharesReminder) {
-        stETHSharesReminder = stETHSharesAmount;
+    ) external returns (uint256 transferred) {
         ICSAccounting.FeeSplit[] memory feeSplits = feeSplitsStorage[
             nodeOperatorId
         ];
@@ -73,7 +89,7 @@ library FeeSplits {
                     feeSplit.share) / MAX_BP;
                 if (splitSharesAmount != 0) {
                     lido.transferShares(feeSplit.recipient, splitSharesAmount);
-                    stETHSharesReminder -= splitSharesAmount;
+                    transferred += splitSharesAmount;
                 }
             }
         }
