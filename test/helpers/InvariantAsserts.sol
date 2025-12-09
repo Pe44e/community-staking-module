@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2025 Lido <info@lido.fi>
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity 0.8.24;
+pragma solidity 0.8.31;
 
 import { Test } from "forge-std/Test.sol";
 import { console } from "forge-std/console.sol";
@@ -167,6 +167,7 @@ contract InvariantAsserts is Test {
 
         bytes32 value;
 
+        // _legacyQueue
         value = vm.load(address(module), bytes32(uint256(1)));
         assertEq(value, bytes32(0), "assert slot(1) is empty");
 
