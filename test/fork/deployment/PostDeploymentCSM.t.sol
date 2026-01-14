@@ -31,6 +31,10 @@ contract DeploymentBaseTest is Test, Utilities, DeploymentFixtures {
 }
 
 contract ModuleDeploymentTest is DeploymentBaseTest {
+    function test_state_onlyFull() public view {
+        assertEq(module.getInitializedVersion(), 3);
+    }
+
     function test_roles_onlyFull() public view {
         assertEq(
             module.getRoleMemberCount(module.CREATE_NODE_OPERATOR_ROLE()),
@@ -550,6 +554,35 @@ contract VettedGateDeploymentTest is DeploymentBaseTest {
             _treeCid: deployParams.identifiedCommunityStakersGateTreeCid,
             admin: deployParams.aragonAgent
         });
+    }
+}
+
+contract GateSealDeploymentTest is DeploymentBaseTest {
+    function test_configuration() public view {
+        assertTrue(address(gateSeal) != address(0), "gate seal missing");
+        address committee = gateSeal.get_sealing_committee();
+        assertEq(committee, deployParams.sealingCommittee, "committee");
+        assertEq(
+            gateSeal.get_seal_duration_seconds(),
+            deployParams.sealDuration,
+            "seal duration"
+        );
+        assertEq(
+            gateSeal.get_expiry_timestamp(),
+            deployParams.sealExpiryTimestamp,
+            "expiry"
+        );
+    }
+
+    function test_sealables() public view {
+        address[] memory sealables = gateSeal.get_sealables();
+        assertEq(sealables.length, 6, "sealables length");
+        assertEq(sealables[0], address(module), "module mismatch");
+        assertEq(sealables[1], address(accounting), "accounting mismatch");
+        assertEq(sealables[2], address(oracle), "oracle mismatch");
+        assertEq(sealables[3], address(verifier), "verifier mismatch");
+        assertEq(sealables[4], address(vettedGate), "vetted gate mismatch");
+        assertEq(sealables[5], address(ejector), "ejector mismatch");
     }
 }
 
