@@ -107,7 +107,14 @@ contract CSMCommon is ModuleFixtures {
             address(this)
         );
         module.grantRole(module.VERIFIER_ROLE(), address(this));
-        module.grantRole(module.SUBMIT_WITHDRAWALS_ROLE(), address(this));
+        module.grantRole(
+            module.REPORT_REGULAR_WITHDRAWN_VALIDATORS_ROLE(),
+            address(this)
+        );
+        module.grantRole(
+            module.REPORT_SLASHED_WITHDRAWN_VALIDATORS_ROLE(),
+            address(this)
+        );
         vm.stopPrank();
     }
 
@@ -1118,7 +1125,7 @@ contract CSMQueueOps is CSMCommon {
 
         vm.expectEmit(address(module));
         emit ICSModule.BatchEnqueued(csm.QUEUE_LOWEST_PRIORITY(), noId, 1);
-        module.reportWithdrawnValidators(validatorInfos);
+        module.reportRegularWithdrawnValidators(validatorInfos);
     }
 }
 
