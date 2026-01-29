@@ -74,6 +74,9 @@ contract CuratedModule is ICuratedModule, BaseModule {
                 depositsCount
             );
         (publicKeys, signatures) = SigningKeys.initKeysSigsBuf(allocated);
+        if (allocated == 0) {
+            return (publicKeys, signatures);
+        }
 
         uint256 loadedKeysCount;
         CuratedModuleStorage storage $ = _storage();
