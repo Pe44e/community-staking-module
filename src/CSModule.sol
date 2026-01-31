@@ -80,6 +80,15 @@ contract CSModule is ICSModule, BaseModule {
         // NOTE: Disable the top-up queue for existing modules, because only modules deployed starting from version 3
         // might use the top-up queue.
         _initTopUpQueue(0);
+        // NOTE: Rebuild the global withdrawn counter for the future.
+        uint64 totalWithdrawnValidators;
+        unchecked {
+            for (uint256 i; i < _nodeOperatorsCount; ++i) {
+                totalWithdrawnValidators += _nodeOperators[i]
+                    .totalWithdrawnKeys;
+            }
+        }
+        _totalWithdrawnValidators = totalWithdrawnValidators;
     }
 
     /// @inheritdoc IStakingModule
