@@ -34,7 +34,7 @@ abstract contract ModuleLinearStorage {
     bytes32 internal __freeSlot2;
     /// @dev Total number of withdrawn validators reported for the module.
     uint256 internal _totalWithdrawnValidators;
-    bytes32 internal __freeSlot4;
+    mapping(uint256 noKeyIndexPacked => uint256) internal _keyAddedBalances;
 
     uint256 internal _nonce;
     mapping(uint256 => NodeOperator) internal _nodeOperators;
@@ -71,7 +71,6 @@ abstract contract BaseModule is
     bytes32 public constant RECOVERER_ROLE = keccak256("RECOVERER_ROLE");
     bytes32 public constant CREATE_NODE_OPERATOR_ROLE =
         keccak256("CREATE_NODE_OPERATOR_ROLE");
-
     ILidoLocator public immutable LIDO_LOCATOR;
     IStETH public immutable STETH;
     IParametersRegistry public immutable PARAMETERS_REGISTRY;
@@ -538,6 +537,25 @@ abstract contract BaseModule is
         emit ValidatorSlashingReported(nodeOperatorId, keyIndex, pubkey);
     }
 
+    /// @inheritdoc IBaseModule
+    function increaseKeyAddedBalance(
+        uint256 nodeOperatorId,
+        uint256 keyIndex,
+        uint256 amount
+    ) external {
+        _checkRole(VERIFIER_ROLE);
+        _onlyExistingNodeOperator(nodeOperatorId);
+
+        NodeOperatorOps.increaseKeyAddedBalance({
+            nodeOperators: _nodeOperators,
+            isValidatorWithdrawn: _isValidatorWithdrawn,
+            keyAddedBalances: _keyAddedBalances,
+            nodeOperatorId: nodeOperatorId,
+            keyIndex: keyIndex,
+            incrementWei: amount
+        });
+    }
+
     function reportSlashedWithdrawnValidators(
         WithdrawnValidatorInfo[] calldata validatorInfos
     ) external {
@@ -818,7 +836,12 @@ abstract contract BaseModule is
             }
 
             NodeOperator storage no = _nodeOperators[info.nodeOperatorId];
-            bool penaltiesCovered = WithdrawnValidatorLib.process(no, info);
+            bool penaltiesCovered = WithdrawnValidatorLib.process(
+                no,
+                info,
+                _isValidatorSlashed[pointer],
+                _keyAddedBalances[pointer]
+            );
             if (!penaltiesCovered) {
                 _onUncompensatedPenalty(info.nodeOperatorId);
             }
@@ -844,6 +867,14 @@ abstract contract BaseModule is
         unchecked {
             emit NonceChanged(++_nonce);
         }
+    }
+
+    /// @inheritdoc IBaseModule
+    function getKeyAddedBalance(
+        uint256 nodeOperatorId,
+        uint256 keyIndex
+    ) external view returns (uint256) {
+        return _keyAddedBalances[_keyPointer(nodeOperatorId, keyIndex)];
     }
 
     /// @dev Prevents reactivation of a Node Operator after an uncovered penalty by

@@ -12,9 +12,11 @@ import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 
 import { CSModule } from "src/CSModule.sol";
 import { IBondCurve } from "src/interfaces/IBondCurve.sol";
+import { IBaseModule, WithdrawnValidatorInfo } from "src/interfaces/IBaseModule.sol";
 import { IDepositQueueLib } from "src/lib/DepositQueueLib.sol";
 import { ITopUpQueueLib } from "src/lib/TopUpQueueLib.sol";
 import { ICSModule } from "src/interfaces/ICSModule.sol";
+import { WithdrawnValidatorLib } from "src/lib/WithdrawnValidatorLib.sol";
 
 import { ParametersRegistryMock } from "../helpers/mocks/ParametersRegistryMock.sol";
 import { ExitPenaltiesMock } from "../helpers/mocks/ExitPenaltiesMock.sol";
@@ -956,6 +958,130 @@ contract CSMTopUpQueue is CSMCommon {
         assertEq(_getTopUpQueueLength(), 0);
     }
 
+    function test_topUp_capsAllocationByKeyAddedBalance() public {
+        createNodeOperator(1);
+        csm.obtainDepositData(1, "");
+
+        bytes memory key = csm.getSigningKeys(0, 0, 1);
+        uint256[] memory allocations = csm.allocateDeposits({
+            maxDepositAmount: 5000 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(5000 ether)
+        });
+
+        assertEq(
+            allocations[0],
+            WithdrawnValidatorLib.MAX_EFFECTIVE_BALANCE -
+                WithdrawnValidatorLib.MIN_ACTIVATION_BALANCE
+        );
+        assertEq(_getTopUpQueueLength(), 0);
+    }
+
+    function test_topUp_emitsKeyAddedBalanceChanged() public {
+        createNodeOperator(1);
+        csm.obtainDepositData(1, "");
+
+        bytes memory key = csm.getSigningKeys(0, 0, 1);
+        vm.expectEmit(address(csm));
+        emit IBaseModule.KeyAddedBalanceChanged(0, 0, 5 ether);
+
+        csm.allocateDeposits({
+            maxDepositAmount: 5 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(5 ether)
+        });
+    }
+
+    function test_topUp_noEmitWhenKeyAtCap() public {
+        createNodeOperator(1);
+        csm.obtainDepositData(1, "");
+
+        uint256 cap = WithdrawnValidatorLib.MAX_EFFECTIVE_BALANCE -
+            WithdrawnValidatorLib.MIN_ACTIVATION_BALANCE;
+        csm.increaseKeyAddedBalance(0, 0, cap);
+
+        bytes memory key = csm.getSigningKeys(0, 0, 1);
+        vm.recordLogs();
+        csm.allocateDeposits({
+            maxDepositAmount: 5 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(5 ether)
+        });
+
+        Vm.Log[] memory entries = vm.getRecordedLogs();
+        bytes32 signature = keccak256(
+            "KeyAddedBalanceChanged(uint256,uint256,uint256)"
+        );
+        for (uint256 i; i < entries.length; ++i) {
+            assertNotEq(entries[i].topics[0], signature);
+        }
+    }
+
+    function test_topUp_allocatesOnlyRemainingToCap() public {
+        createNodeOperator(1);
+        csm.obtainDepositData(1, "");
+
+        uint256 cap = WithdrawnValidatorLib.MAX_EFFECTIVE_BALANCE -
+            WithdrawnValidatorLib.MIN_ACTIVATION_BALANCE;
+        csm.increaseKeyAddedBalance(0, 0, cap - 1 ether);
+
+        bytes memory key = csm.getSigningKeys(0, 0, 1);
+        vm.expectEmit(address(csm));
+        emit IBaseModule.KeyAddedBalanceChanged(0, 0, cap);
+
+        uint256[] memory allocations = csm.allocateDeposits({
+            maxDepositAmount: 5 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(5 ether)
+        });
+
+        assertEq(allocations, UintArr(1 ether));
+    }
+
+    function test_withdrawalChargesMissedAmount() public {
+        createNodeOperator(1);
+        csm.obtainDepositData(1, "");
+
+        bytes memory key = csm.getSigningKeys(0, 0, 1);
+        csm.allocateDeposits({
+            maxDepositAmount: 10 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(10 ether)
+        });
+
+        vm.deal(address(this), 100 ether);
+        accounting.depositETH{ value: 100 ether }(0);
+        uint256 bondBefore = accounting.getBond(0);
+
+        vm.prank(admin);
+        csm.grantRole(
+            csm.REPORT_REGULAR_WITHDRAWN_VALIDATORS_ROLE(),
+            address(this)
+        );
+
+        WithdrawnValidatorInfo[] memory infos = new WithdrawnValidatorInfo[](1);
+        infos[0] = WithdrawnValidatorInfo({
+            nodeOperatorId: 0,
+            keyIndex: 0,
+            exitBalance: 40 ether,
+            slashingPenalty: 0,
+            isSlashed: false
+        });
+
+        csm.reportRegularWithdrawnValidators(infos);
+        assertEq(accounting.getBond(0), bondBefore - 2 ether);
+    }
+
     function test_topUp_nonceIncrementsWhenKeysProvided() public {
         createNodeOperator(1);
         csm.obtainDepositData(1, "");
@@ -1830,7 +1956,7 @@ contract CSMRemoveKeysChargeFee is CSMCommon {
         );
 
         vm.expectEmit(address(module));
-        emit ICSModule.KeyRemovalChargeApplied(noId);
+        emit IBaseModule.KeyRemovalChargeApplied(noId);
 
         vm.prank(nodeOperator);
         module.removeKeys(noId, 1, 2);
@@ -1876,7 +2002,7 @@ contract CSMRemoveKeysChargeFee is CSMCommon {
         for (uint256 i = 0; i < entries.length; i++) {
             assertNotEq(
                 entries[i].topics[0],
-                ICSModule.KeyRemovalChargeApplied.selector
+                IBaseModule.KeyRemovalChargeApplied.selector
             );
         }
 
@@ -1974,6 +2100,8 @@ contract CSMReportWithdrawnValidators is
     ModuleReportWithdrawnValidators,
     CSMCommon
 {}
+
+contract CSMKeyAddedBalance is ModuleKeyAddedBalance, CSMCommon {}
 
 contract CSMGetStakingModuleSummary is
     ModuleGetStakingModuleSummary,

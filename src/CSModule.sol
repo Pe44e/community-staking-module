@@ -17,6 +17,7 @@ import { DepositQueueLib, Batch } from "./lib/DepositQueueLib.sol";
 import { SigningKeys } from "./lib/SigningKeys.sol";
 import { DepositQueueOps } from "./lib/DepositQueueOps.sol";
 import { TopUpQueueOps } from "./lib/TopUpQueueOps.sol";
+import { NodeOperatorOps } from "./lib/NodeOperatorOps.sol";
 
 contract CSModule is ICSModule, BaseModule {
     using DepositQueueLib for DepositQueueLib.Queue;
@@ -193,7 +194,6 @@ contract CSModule is ICSModule, BaseModule {
                             );
                         }
                     }
-
                     SigningKeys.loadKeysSigs({
                         nodeOperatorId: noId,
                         startIndex: no.totalDepositedKeys,
@@ -256,18 +256,34 @@ contract CSModule is ICSModule, BaseModule {
         _onlyEnabledTopUpQueue();
         _checkStakingRouterRole();
 
+        // Cap top-ups so we don't over-allocate to keys that lost balance due to CL penalties.
+        uint256[] memory cappedTopUpLimits = NodeOperatorOps
+            .capTopUpLimitsByKeyBalance(
+                _keyAddedBalances,
+                operatorIds,
+                keyIndices,
+                topUpLimits
+            );
+
         allocations = TopUpQueueOps.allocateDeposits({
             topUpQueue: _topUpQueue(),
             depositAmount: maxDepositAmount,
             pubkeys: pubkeys,
             keyIndices: keyIndices,
             operatorIds: operatorIds,
-            topUpLimits: topUpLimits
+            topUpLimits: cappedTopUpLimits
         });
 
         if (keyIndices.length == 0) {
             return allocations;
         }
+
+        NodeOperatorOps.increaseKeyAddedBalancesByAllocations(
+            _keyAddedBalances,
+            operatorIds,
+            keyIndices,
+            allocations
+        );
 
         _incrementModuleNonce();
     }
