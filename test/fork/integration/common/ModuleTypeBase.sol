@@ -7,11 +7,7 @@ import { DeploymentFixtures, IForkIntegrationHelpers, CSMIntegrationHelpers, Cur
 import { Utilities } from "../../../helpers/Utilities.sol";
 import { InvariantAsserts } from "../../../helpers/InvariantAsserts.sol";
 
-abstract contract ModuleTypeBase is
-    DeploymentFixtures,
-    Utilities,
-    InvariantAsserts
-{
+abstract contract ModuleTypeBase is DeploymentFixtures, Utilities, InvariantAsserts {
     IForkIntegrationHelpers internal integrationHelpers;
 
     function _setUpModule() internal virtual;
@@ -28,15 +24,8 @@ abstract contract ModuleTypeBase is
 abstract contract CSMIntegrationBase is ModuleTypeBase {
     function _setUpModule() internal override {
         _forkAndInitialize();
-        if (moduleType != ModuleType.Community) {
-            vm.skip(true);
-        }
-        integrationHelpers = new CSMIntegrationHelpers(
-            module,
-            accounting,
-            stakingRouter,
-            permissionlessGate
-        );
+        if (moduleType != ModuleType.Community) vm.skip(true);
+        integrationHelpers = new CSMIntegrationHelpers(module, accounting, stakingRouter, permissionlessGate);
     }
 
     function _assertModuleEnqueuedCount() internal override {
@@ -47,15 +36,8 @@ abstract contract CSMIntegrationBase is ModuleTypeBase {
 abstract contract CuratedIntegrationBase is ModuleTypeBase {
     function _setUpModule() internal override {
         _forkAndInitialize();
-        if (moduleType != ModuleType.Curated) {
-            vm.skip(true);
-        }
-        integrationHelpers = new CuratedIntegrationHelpers(
-            module,
-            accounting,
-            stakingRouter,
-            curatedGates
-        );
+        if (moduleType != ModuleType.Curated) vm.skip(true);
+        integrationHelpers = new CuratedIntegrationHelpers(module, accounting, stakingRouter, curatedGates);
     }
 
     function _assertModuleEnqueuedCount() internal override {}

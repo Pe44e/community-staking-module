@@ -17,12 +17,7 @@ import { IMetaRegistry, OperatorMetadata } from "./interfaces/IMetaRegistry.sol"
 import { IAccounting } from "./interfaces/IAccounting.sol";
 
 /// @notice Merkle gate for Curated Module v2
-contract CuratedGate is
-    ICuratedGate,
-    AccessControlEnumerableUpgradeable,
-    PausableUntil,
-    AssetRecoverer
-{
+contract CuratedGate is ICuratedGate, AccessControlEnumerableUpgradeable, PausableUntil, AssetRecoverer {
     bytes32 public constant PAUSE_ROLE = keccak256("PAUSE_ROLE");
     bytes32 public constant RESUME_ROLE = keccak256("RESUME_ROLE");
     bytes32 public constant RECOVERER_ROLE = keccak256("RECOVERER_ROLE");
@@ -52,9 +47,7 @@ contract CuratedGate is
     mapping(address => bool) internal _consumedAddresses;
 
     constructor(address module) {
-        if (module == address(0)) {
-            revert ZeroModuleAddress();
-        }
+        if (module == address(0)) revert ZeroModuleAddress();
 
         MODULE = ICuratedModule(module);
         ACCOUNTING = MODULE.ACCOUNTING();
@@ -76,9 +69,7 @@ contract CuratedGate is
 
         __AccessControlEnumerable_init();
         curveId = _curveId;
-        if (_curveId == ACCOUNTING.DEFAULT_BOND_CURVE_ID()) {
-            _defaultCurveSet = true;
-        }
+        if (_curveId == ACCOUNTING.DEFAULT_BOND_CURVE_ID()) _defaultCurveSet = true;
         _setTreeParams(_treeRoot, _treeCid);
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
@@ -104,12 +95,11 @@ contract CuratedGate is
         _consume(proof);
 
         // Enforce extendedManagerPermissions = true; accept manager/reward from args
-        NodeOperatorManagementProperties
-            memory props = NodeOperatorManagementProperties({
-                managerAddress: managerAddress,
-                rewardAddress: rewardAddress,
-                extendedManagerPermissions: true
-            });
+        NodeOperatorManagementProperties memory props = NodeOperatorManagementProperties({
+            managerAddress: managerAddress,
+            rewardAddress: rewardAddress,
+            extendedManagerPermissions: true
+        });
 
         nodeOperatorId = MODULE.createNodeOperator({
             from: msg.sender,
@@ -118,9 +108,7 @@ contract CuratedGate is
         });
 
         // Apply instance-specific custom curve
-        if (!_defaultCurveSet) {
-            ACCOUNTING.setBondCurve(nodeOperatorId, curveId);
-        }
+        if (!_defaultCurveSet) ACCOUNTING.setBondCurve(nodeOperatorId, curveId);
 
         // Persist metadata in separate storage
         OperatorMetadata memory metadata = OperatorMetadata({
@@ -133,10 +121,7 @@ contract CuratedGate is
     }
 
     /// @inheritdoc IMerkleGate
-    function setTreeParams(
-        bytes32 _treeRoot,
-        string calldata _treeCid
-    ) external onlyRole(SET_TREE_ROLE) {
+    function setTreeParams(bytes32 _treeRoot, string calldata _treeCid) external onlyRole(SET_TREE_ROLE) {
         _setTreeParams(_treeRoot, _treeCid);
     }
 
@@ -151,10 +136,7 @@ contract CuratedGate is
     }
 
     /// @inheritdoc IMerkleGate
-    function verifyProof(
-        address member,
-        bytes32[] calldata proof
-    ) public view returns (bool) {
+    function verifyProof(address member, bytes32[] calldata proof) public view returns (bool) {
         return MerkleProof.verifyCalldata(proof, treeRoot, hashLeaf(member));
     }
 
@@ -170,16 +152,11 @@ contract CuratedGate is
         emit Consumed(msg.sender);
     }
 
-    function _setTreeParams(
-        bytes32 _treeRoot,
-        string calldata _treeCid
-    ) internal {
+    function _setTreeParams(bytes32 _treeRoot, string calldata _treeCid) internal {
         if (_treeRoot == bytes32(0)) revert InvalidTreeRoot();
         if (_treeRoot == treeRoot) revert InvalidTreeRoot();
         if (bytes(_treeCid).length == 0) revert InvalidTreeCid();
-        if (keccak256(bytes(_treeCid)) == keccak256(bytes(treeCid))) {
-            revert InvalidTreeCid();
-        }
+        if (keccak256(bytes(_treeCid)) == keccak256(bytes(treeCid))) revert InvalidTreeCid();
         treeRoot = _treeRoot;
         treeCid = _treeCid;
         emit TreeSet(_treeRoot, _treeCid);

@@ -45,12 +45,8 @@ contract FeeOracle is IFeeOracle, BaseOracle, PausableUntil, AssetRecoverer {
         uint256 secondsPerSlot,
         uint256 genesisTime
     ) BaseOracle(secondsPerSlot, genesisTime) {
-        if (feeDistributor == address(0)) {
-            revert ZeroFeeDistributorAddress();
-        }
-        if (strikes == address(0)) {
-            revert ZeroStrikesAddress();
-        }
+        if (feeDistributor == address(0)) revert ZeroFeeDistributorAddress();
+        if (strikes == address(0)) revert ZeroStrikesAddress();
 
         FEE_DISTRIBUTOR = IFeeDistributor(feeDistributor);
         STRIKES = IValidatorStrikes(strikes);
@@ -59,14 +55,8 @@ contract FeeOracle is IFeeOracle, BaseOracle, PausableUntil, AssetRecoverer {
     /// @dev Initialize contract from scratch. In case of a method call frontrun, the contract instance should be discarded.
     ///      It is recommended to call this method in the same transaction as the deployment transaction
     ///      and perform extensive deployment verification before using the contract instance.
-    function initialize(
-        address admin,
-        address consensusContract,
-        uint256 consensusVersion
-    ) external {
-        if (admin == address(0)) {
-            revert ZeroAdminAddress();
-        }
+    function initialize(address admin, address consensusContract, uint256 consensusVersion) external {
+        if (admin == address(0)) revert ZeroAdminAddress();
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
 
@@ -95,10 +85,7 @@ contract FeeOracle is IFeeOracle, BaseOracle, PausableUntil, AssetRecoverer {
     }
 
     /// @inheritdoc IFeeOracle
-    function submitReportData(
-        ReportData calldata data,
-        uint256 contractVersion
-    ) external whenResumed {
+    function submitReportData(ReportData calldata data, uint256 contractVersion) external whenResumed {
         _checkMsgSenderIsAllowedToSubmitData();
         _checkContractVersion(contractVersion);
         _checkConsensusData(
@@ -134,12 +121,7 @@ contract FeeOracle is IFeeOracle, BaseOracle, PausableUntil, AssetRecoverer {
     }
 
     function _checkMsgSenderIsAllowedToSubmitData() internal view {
-        if (
-            _isConsensusMember(msg.sender) ||
-            hasRole(SUBMIT_DATA_ROLE, msg.sender)
-        ) {
-            return;
-        }
+        if (_isConsensusMember(msg.sender) || hasRole(SUBMIT_DATA_ROLE, msg.sender)) return;
         revert SenderNotAllowed();
     }
 

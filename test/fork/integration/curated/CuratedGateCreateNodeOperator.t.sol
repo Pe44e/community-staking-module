@@ -24,19 +24,14 @@ contract CuratedGateCreateNodeOperatorTest is CuratedIntegrationBase {
         gate.grantRole(gate.RESUME_ROLE(), address(this));
         vm.stopPrank();
 
-        if (gate.isPaused()) {
-            gate.resume();
-        }
+        if (gate.isPaused()) gate.resume();
     }
 
     function test_createNodeOperator_setsMetadataAndCurve() public {
         address nodeOperator = nextAddress("NodeOperator");
         MerkleTree tree = new MerkleTree();
         tree.pushLeaf(abi.encode(nodeOperator));
-        string memory cid = string.concat(
-            "cid-",
-            vm.toString(uint256(uint160(nodeOperator)))
-        );
+        string memory cid = string.concat("cid-", vm.toString(uint256(uint160(nodeOperator))));
         gate.setTreeParams(tree.root(), cid);
         bytes32[] memory proof = tree.getProof(0);
 
@@ -44,13 +39,7 @@ contract CuratedGateCreateNodeOperatorTest is CuratedIntegrationBase {
         string memory name = "Operator";
         string memory description = "Curated operator";
         vm.prank(nodeOperator);
-        uint256 noId = gate.createNodeOperator(
-            name,
-            description,
-            address(0),
-            address(0),
-            proof
-        );
+        uint256 noId = gate.createNodeOperator(name, description, address(0), address(0), proof);
 
         assertEq(module.getNodeOperatorsCount(), beforeCount + 1);
 
