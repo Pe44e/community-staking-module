@@ -998,6 +998,37 @@ contract CSMTopUpQueue is CSMCommon {
         }
     }
 
+    function test_topUp_quantizesDepositAmountToStep() public {
+        createNodeOperator(1);
+        csm.obtainDepositData(1, "");
+
+        bytes memory key = csm.getSigningKeys(0, 0, 1);
+
+        uint256[] memory firstAllocations = csm.allocateDeposits({
+            maxDepositAmount: 3 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(4 ether)
+        });
+
+        assertEq(firstAllocations, UintArr(2 ether));
+        assertEq(_getTopUpQueueLength(), 1);
+        assertEq(csm.getKeyAddedBalance(0, 0), 2 ether);
+
+        uint256[] memory secondAllocations = csm.allocateDeposits({
+            maxDepositAmount: 2 ether,
+            pubkeys: BytesArr(key),
+            keyIndices: UintArr(0),
+            operatorIds: UintArr(0),
+            topUpLimits: UintArr(2 ether)
+        });
+
+        assertEq(secondAllocations, UintArr(2 ether));
+        assertEq(_getTopUpQueueLength(), 0);
+        assertEq(csm.getKeyAddedBalance(0, 0), 4 ether);
+    }
+
     function test_topUp_noEmitWhenKeyAtCap() public {
         createNodeOperator(1);
         csm.obtainDepositData(1, "");
@@ -2126,14 +2157,14 @@ contract CSMMisc is ModuleMisc, CSMCommon {
         assertEq(module.getInitializedVersion(), 3);
     }
 
-    function test_onNodeOperatorBondCurveChange_updatesDepositable() public assertInvariants {
+    function test_updateDepositInfo_updatesDepositable() public assertInvariants {
         uint256 noId = createNodeOperator(4);
 
         uint256 depositableBefore = module.getNodeOperator(noId).depositableValidatorsCount;
         assertEq(depositableBefore, 4);
 
         accounting.updateBondCurve(0, BOND_SIZE * 2);
-        csm.onNodeOperatorBondCurveChange(0);
+        csm.updateDepositInfo(0);
 
         uint256 depositableAfter = module.getNodeOperator(noId).depositableValidatorsCount;
         assertEq(depositableAfter, 2);
